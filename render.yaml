@@ -1,0 +1,11 @@
+﻿services:
+  - type: web
+    name: fortune-ai-server
+    env: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: SERVICE_TOKEN
+        sync: false
+      - key: ALLOW_ORIGINS
+        value: "*"
