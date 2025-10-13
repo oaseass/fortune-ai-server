@@ -1,0 +1,26 @@
+# ---- Dockerfile ----
+FROM python:3.10-slim
+
+# 기본 라이브러리 (OpenCV 실행에 필요)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 파이썬 의존성
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 앱 복사
+COPY . .
+
+# uvicorn 실행 설정
+ENV PORT=8000
+EXPOSE 8000
+
+# (선택) CORS 도메인 허용
+# ENV ALLOW_ORIGINS=*
+
+# 실행 커맨드
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
