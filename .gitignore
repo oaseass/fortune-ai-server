@@ -1,19 +1,8 @@
-﻿# Python
-__pycache__/ 
+﻿__pycache__/
 *.pyc
-
-# venv
 .venv/
-
-# OS/IDE
+.env
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Local secrets
-.env
-
-# Build
-dist/
-build/

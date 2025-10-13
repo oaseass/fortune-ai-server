@@ -1,12 +1,9 @@
-fastapi==0.112.2
+癤풾astapi==0.112.2
 uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 Pillow==10.4.0
 opencv-python-headless==4.10.0.84
-numpy==1.26.4
-scipy==1.11.4
 lunar-python==1.2.24
+reportlab==4.2.2
 python-dotenv==1.0.1
-# 필요 시 사용 (권장: 3.10 이미지)
-mediapipe==0.10.14
-protobuf==3.20.*
+numpy>=1.24,<2.0
