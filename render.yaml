@@ -12,4 +12,4 @@
       - key: SERVICE_TOKEN
         sync: false
       - key: ALLOW_ORIGINS
-        value: *
+        value: https://dnsauddmfqhsms.mycafe24.com
