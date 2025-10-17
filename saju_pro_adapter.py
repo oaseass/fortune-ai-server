@@ -1,91 +1,48 @@
-﻿import os, json, asyncio
-from typing import Dict, Any
-import httpx
-from lunar_python import Lunar
+﻿# -*- coding: utf-8 -*-
+import os, requests
 
-PRO_SAJU_URL = os.getenv("PRO_SAJU_URL", "").rstrip("/")
-PRO_SAJU_KEY = os.getenv("PRO_SAJU_KEY", "")
+PRO_SAJU_URL = os.getenv("PRO_SAJU_URL", "").strip() or "https://vendor.example.com/v1/saju"
+PRO_SAJU_KEY = os.getenv("PRO_SAJU_KEY", "").strip() or "발급받은_API_키"
+PRO_AUTH_HEADER = os.getenv("PRO_SAJU_AUTH_HEADER", "").strip() or "Authorization"
+PRO_AUTH_PREFIX = os.getenv("PRO_SAJU_AUTH_PREFIX", "").strip() or "Bearer "
 
-_CACHE: dict[str, tuple[dict, float]] = {}
+class ProSajuError(Exception): ...
 
-def _cache_get(k: str):
-    v = _CACHE.get(k)
-    if not v: return None
-    data, exp = v
-    if exp < asyncio.get_event_loop().time():
-        _CACHE.pop(k, None)
-        return None
-    return data
+def _hdr():
+    h = {"Accept":"application/json"}
+    if PRO_AUTH_HEADER:
+        h[PRO_AUTH_HEADER] = f"{PRO_AUTH_PREFIX}{PRO_SAJU_KEY}".strip()
+    return h
 
-def _cache_set(k: str, data: dict, ttl: int = 86400):
-    _CACHE[k] = (data, asyncio.get_event_loop().time() + ttl)
-
-def _to_solar(date_str: str, calendar_type: str) -> str:
-    if calendar_type == "lunar":
-        y, m, d = map(int, date_str.split("-"))
-        lunar = Lunar.fromYmd(y, m, d)
-        sol = lunar.getSolar()
-        return f"{sol.getYear():04d}-{sol.getMonth():02d}-{sol.getDay():02d}"
-    return date_str
-
-async def fetch_saju_from_provider(meta: Dict[str, Any]) -> Dict[str, Any]:
+def fetch_pro_saju(meta:dict)->dict:
     if not PRO_SAJU_URL or not PRO_SAJU_KEY:
-        raise RuntimeError("PRO_SAJU_URL/PRO_SAJU_KEY not set")
-
-    solar = _to_solar(meta["birthdate"], meta["calendarType"])
-    hhmm  = meta.get("birthtime") or "12:00"
-    if hhmm in ("紐⑤쫫","unknown"): hhmm = "12:00"
+        raise ProSajuError("PRO_SAJU_URL/KEY not set")
 
     payload = {
-        "name": meta["name"],
-        "gender": meta["gender"],
-        "date": solar,
-        "time": hhmm,
-        "calendar": "solar",
+        "name":        meta.get("name",""),
+        "gender":      meta.get("gender","unknown"),
+        "calendar":    meta.get("calendarType","solar"),
+        "birthdate":   meta.get("birthdate",""),
+        "birthtime":   meta.get("birthtime","unknown"),
     }
+    r = requests.post(PRO_SAJU_URL, json=payload, headers=_hdr(), timeout=25)
+    if r.status_code != 200:
+        raise ProSajuError(f"vendor http {r.status_code}: {r.text[:300]}")
+    d = r.json()
 
-    ck = json.dumps(payload, sort_keys=True)
-    cached = _cache_get(ck)
-    if cached: return cached
-
-    headers = {"Authorization": f"Bearer {PRO_SAJU_KEY}", "Content-Type": "application/json"}
-    timeout = httpx.Timeout(3.0, connect=3.0)
-    last_err = None
-    for _ in (1,2):
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.post(f"{PRO_SAJU_URL}/analyze", headers=headers, json=payload)
-            r.raise_for_status()
-            vendor = r.json()
-            uni = adapt_vendor_to_unified(vendor, meta)
-            _cache_set(ck, uni)
-            return uni
-        except Exception as e:
-            last_err = e
-            await asyncio.sleep(0.25)
-    raise last_err
-
-def adapt_vendor_to_unified(v: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
-    pillars = v.get("pillars", {})
-    ten_gods = v.get("ten_gods", {})
-    yhs = v.get("yongheeshin", [])
-    daewoon = v.get("daewoon", [])
-    sewoon = v.get("sewoon", [])
-    summary = v.get("summary") or f"{meta['name']}?섏쓽 ?듭떖 ?깊뼢 諛??댁꽭 ?먮쫫 ?붿빟"
+    # 踰ㅻ뜑 ?묐떟 ?ㅻ? ?쒖??뺤쑝濡?留ㅽ븨 (?꾩슂???ш린留?議곗젙)
+    g = d.get("face_summary") or d.get("gwansang") or ""
+    s = d.get("saju_summary") or d.get("analysis") or ""
+    c = d.get("combined_summary") or d.get("overall") or ""
+    L = d.get("lucky") or {}
 
     return {
-        "ok": True,
-        "meta": meta,
-        "saju": {
-            "pillars": {
-                "year": pillars.get("y"),
-                "month": pillars.get("m"),
-                "day": pillars.get("d"),
-                "time": pillars.get("t"),
-            },
-            "ten_gods": ten_gods,
-            "yongheeshin": yhs,
-            "luck": {"daewoon": daewoon, "sewoon": sewoon},
-        },
-        "saju_summary": summary,
+        "gwansang_summary": g,
+        "saju_summary": s,
+        "combined_summary": c,
+        "lucky": {
+            "colors": L.get("colors", []),
+            "numbers": L.get("numbers", []),
+            "direction": L.get("direction", ""),
+        }
     }

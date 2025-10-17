@@ -89,7 +89,45 @@ async def analyze(
 ):
     check_token(authorization)
     content = await file.read()
-    return JSONResponse({
+    # >>> PRO SAJU START (method A - auto inject)
+try:
+    # meta ?덉쟾 ?뺣낫
+    if 'meta' not in locals():
+        _form = await request.form()
+        meta = {
+            "name": _form.get("name") or "",
+            "gender": _form.get("gender") or "unknown",
+            "calendarType": _form.get("calendarType") or "solar",
+            "birthdate": _form.get("birthdate") or "",
+            "birthtime": _form.get("birthtime") or "unknown",
+        }
+    if fetch_pro_saju:
+        _norm = fetch_pro_saju(meta)
+        if isinstance(_norm, dict):
+            gwansang_summary = locals().get('gwansang_summary', '')
+            saju_summary     = locals().get('saju_summary', '')
+            combined_summary = locals().get('combined_summary', '')
+            lucky            = locals().get('lucky', {"colors":[],"numbers":[],"direction":""})
+
+            if _norm.get('gwansang_summary'): gwansang_summary = _norm['gwansang_summary']
+            if _norm.get('saju_summary'):     saju_summary     = _norm['saju_summary']
+            if _norm.get('combined_summary'): combined_summary = _norm['combined_summary']
+            if isinstance(_norm.get('lucky'), dict): lucky.update(_norm['lucky'])
+
+            result = {
+                "ok": True,
+                "meta": meta,
+                "gwansang_summary": gwansang_summary,
+                "saju_summary": saju_summary,
+                "combined_summary": combined_summary,
+                "bbox": locals().get("bbox", None),
+                "lucky": lucky,
+            }
+            return JSONResponse(result) if 'JSONResponse' in globals() else result
+except Exception as _e:
+    print(f"[WARN] PRO block error: {_e}")
+# <<< PRO SAJU END
+return JSONResponse({
         "ok": True,
         "meta": {"name": name,"gender": gender,"calendarType": calendarType,
                  "birthdate": birthdate,"birthtime": birthtime,"upload_kb": round(len(content)/1024,1)},
@@ -98,4 +136,5 @@ async def analyze(
         "combined_summary": (saju_part["saju_summary"] if saju_part else "?곕え 醫낇빀 ?붿빟"),
         "lucky": {"colors":["네이비","블랙","그레이"],"numbers":[3,6,9],"direction":"북"}
     })
+
 
