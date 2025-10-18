@@ -544,16 +544,96 @@ try:
 except Exception as _e:
     print(f"[WARN] PRO block error: {_e}")
 # <<< PRO SAJU END
-return JSONResponse({
-        "ok": True,
-        "meta": {"name": name,"gender": gender,"calendarType": calendarType,
-                 "birthdate": birthdate,"birthtime": birthtime,"upload_kb": round(len(content)/1024,1)},
-        "gwansang_summary": "서버 작동 확인용 더미 요약",
-        "saju_summary": (saju_part["saju_summary"] if saju_part else "?곕え 怨꾩궛媛?(?곸뾽?⑹? ?꾨Ц ?ъ＜ API)"),
-        "combined_summary": (saju_part["saju_summary"] if saju_part else "?곕え 醫낇빀 ?붿빟"),
-        "lucky": {"colors":["네이비","블랙","그레이"],"numbers":[3,6,9],"direction":"북"}
-    })
+
+# --- ?덉쟾 ?묐떟 鍮뚮뱶 (鍮덇컪 諛⑹?) ---
+try:
+    meta = {
+        "name": meta.get("name") if "meta" in locals() else (payload.get("name") if "payload" in locals() else None),
+        "gender": meta.get("gender") if "meta" in locals() else (payload.get("gender") if "payload" in locals() else None),
+        "calendarType": meta.get("calendarType") if "meta" in locals() else (payload.get("calendarType") if "payload" in locals() else None),
+        "birthdate": meta.get("birthdate") if "meta" in locals() else (payload.get("birthdate") if "payload" in locals() else None),
+        "birthtime": meta.get("birthtime") if "meta" in locals() else (payload.get("birthtime") if "payload" in locals() else None),
+    }
+except Exception:
+    meta = {"name":None,"gender":None,"calendarType":None,"birthdate":None,"birthtime":None}
+
+gw = gwansang_summary if "gwansang_summary" in locals() else None
+try:
+    saju_text, combined_text, lucky = render_rich_results(meta, gw)
+except Exception as e:
+    logger.warning(f"rich render error: {e}")
+    saju_text, combined_text, lucky = "?ъ＜ ?꾨Ц 遺꾩꽍 ?앹꽦 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.", "?붿빟 ?앹꽦 ?ㅽ뙣 ??湲곕낯 ?덈궡濡??泥댄빀?덈떎.", {"colors":["釉붾옓"],"numbers":[7],"direction":"遺?}
+
+resp = {
+    "ok": True,
+    "meta": meta,
+    "gwansang_summary": gw or "愿???붿빟??鍮꾩뼱 ?덉뒿?덈떎.",
+    "saju_summary": saju_text or "?ъ＜ ?붿빟??鍮꾩뼱 ?덉뒿?덈떎.",
+    "combined_summary": combined_text or "醫낇빀 ?붿빟??鍮꾩뼱 ?덉뒿?덈떎.",
+    "lucky": lucky or {"colors":[],"numbers":[],"direction":"??}
+}
+return JSONResponse(resp)
 
 
 
 
+
+
+# === RICH OPENAI PROVIDER ===
+import os, logging
+logger = logging.getLogger("fortune")
+logger.setLevel(logging.INFO)
+
+RICH_MODE = os.getenv("RICH_MODE", "0").strip()
+SAJU_PROVIDER = (os.getenv("SAJU_PROVIDER") or "").strip().lower()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_BASE  = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
+OPENAI_KEY   = os.getenv("OPENAI_API_KEY")
+
+try:
+    from openai import OpenAI
+    _HAS_OPENAI = True
+except Exception as _e:
+    logger.warning(f"openai import failed: {_e}")
+    _HAS_OPENAI = False
+
+def _pro_saju_openai(meta: dict, gwansang: str) -> str:
+    """
+    OpenAI ?몄텧 ???ㅽ뙣 ???덉쇅媛 ?꾨줈?몄뒪瑜?二쎌씠吏 ?딅룄濡???긽 try/except濡?蹂댄샇.
+    寃곌낵??理쒕? 4000???뺣룄濡??덈떒??諛섑솚.
+    """
+    if not (_HAS_OPENAI and OPENAI_KEY):
+        return "?ъ＜ ?꾨Ц 遺꾩꽍? ?꾩쭅 ?곌껐?섏? ?딆븯?듬땲?? (OPENAI_API_KEY 誘몄꽕??"
+
+    try:
+        client = OpenAI(api_key=OPENAI_KEY, base_url=OPENAI_BASE)
+        prompt = (
+            "?뱀떊? ?쒓뎅???ъ＜/紐낅━ ?꾨Ц媛?낅땲?? ?꾨옒 ?몄쟻?ы빆怨?愿???붿빟??李멸퀬?섏뿬, "
+            "1) ?ъ＜ ?붿빟(?깃꺽, ?λ떒?? ?곸꽦), 2) ?щЪ쨌吏곸뾽, 3) ?멸컙愿怨꽷룹뿰?? 4) 嫄닿컯 ?좎쓽, "
+            "5) ?ы빐/?ㅼ쓬???댁꽭 ?듭떖, 6) ?ㅼ쿇 ?곸쓣 ?뚯젣紐⑷낵 遺덈┸?쇰줈 600~900???대줈 怨좉툒?ㅻ읇寃??묒꽦?섏꽭??\n\n"
+            f"[?몄쟻?ы빆]\n{meta}\n\n[愿???붿빟]\n{gwansang or '愿???곗씠???놁쓬'}\n"
+        )
+        rsp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role":"user","content":prompt}],
+            temperature=0.8,
+        )
+        text = (rsp.choices[0].message.content or "").strip()
+        return text[:4000] if text else "?ъ＜ ?꾨Ц 遺꾩꽍 寃곌낵瑜?鍮꾩썙?????놁뒿?덈떎."
+    except Exception as e:
+        logger.warning(f"openai vendor error: {e}")
+        return "?ъ＜ ?꾨Ц 遺꾩꽍 ?몄텧???쇱떆?곸쑝濡??ㅽ뙣?덉뒿?덈떎. (踰ㅻ뜑 ?묐떟 吏???ㅻ쪟)"
+
+def render_rich_results(meta: dict, gwansang: str):
+    """
+    怨좉툒 寃곌낵 ?앹꽦: OpenAI 怨듦툒???ъ슜 議곌굔??異⑹”???뚮쭔 ?몄텧,
+    ?꾨땲硫?源붾걫??湲곕낯媛믪쑝濡?梨꾩?.
+    """
+    if SAJU_PROVIDER == "openai" and RICH_MODE == "1":
+        saju = _pro_saju_openai(meta, gwansang)
+    else:
+        saju = "?ъ＜ ?꾨Ц 遺꾩꽍? 鍮꾪솢???곹깭?낅땲?? (RICH_MODE=1, SAJU_PROVIDER=openai ?꾩슂)"
+    combined = "愿?곴낵 ?ъ＜瑜?醫낇빀??洹좏삎 ?≫엺 議곗뼵???쒓났?⑸땲?? ?μ젏? 媛뺥솕?섍퀬, ?쎌젏? 愿由ы븯???꾨왂??沅뚰빀?덈떎."
+    lucky = {"colors":["?ㅼ씠鍮?,"李⑥퐳","?붿씠??], "numbers":[3,6,9], "direction":"遺곷룞"}
+    return saju, combined, lucky
+# === END RICH OPENAI PROVIDER ===
