@@ -1,24 +1,24 @@
 # ============================
-# upgrade_pro_saju.ps1 (v2)
+# upgrade_pro_saju.ps1 (clean)
 # ============================
 
-$ErrorActionPreference = "Stop"
-
-# --- 사용자 설정 ---
+# ---- 설정 ----
 $RepoPath = "C:\fortune_ai_server_pro_lunar"
+$GitUser  = "oaseass"          # 필요 시 수정
+$GitEmail = "you@example.com"  # 필요 시 수정
 $Branch   = "main"
-$GitUser  = "oaseass"
-$GitEmail = "you@example.com"
 
+# ---- 기본 체크 ----
+if (!(Test-Path $RepoPath)) { throw "Repo path not found: $RepoPath" }
 Set-Location $RepoPath
 
-# Git 기본 설정
 git config --global user.name  $GitUser  | Out-Null
 git config --global user.email $GitEmail | Out-Null
 try { git fetch --all | Out-Null } catch {}
-try { git checkout $Branch  | Out-Null } catch { git checkout -b $Branch | Out-Null }
 
-# 1) 전문 사주 어댑터 파일 생성/갱신
+try { git checkout $Branch | Out-Null } catch { git checkout -b $Branch | Out-Null }
+
+# ---- 1) 어댑터 파일 생성/갱신 ----
 $AdapterPath = Join-Path $RepoPath "saju_pro_adapter.py"
 $AdapterCode = @'
 import os, json, asyncio
@@ -43,6 +43,11 @@ def _cache_get(k: str):
 def _cache_set(k: str, data: dict, ttl: int = 86400):
     _CACHE[k] = (data, asyncio.get_event_loop().time() + ttl)
 
+def _h(obj: dict) -> str:
+    raw = json.dumps(obj, ensure_ascii=False, sort_keys=True)
+    import hashlib
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
 def _to_solar(date_str: str, calendar_type: str) -> str:
     if calendar_type == "lunar":
         y, m, d = map(int, date_str.split("-"))
@@ -57,7 +62,7 @@ async def fetch_saju_from_provider(meta: Dict[str, Any]) -> Dict[str, Any]:
 
     solar = _to_solar(meta["birthdate"], meta["calendarType"])
     hhmm  = meta.get("birthtime") or "12:00"
-    if hhmm in ("모름","unknown"): hhmm = "12:00"
+    if hhmm in ("모름", "unknown"): hhmm = "12:00"
 
     payload = {
         "name": meta["name"],
@@ -67,14 +72,14 @@ async def fetch_saju_from_provider(meta: Dict[str, Any]) -> Dict[str, Any]:
         "calendar": "solar",
     }
 
-    ck = json.dumps(payload, sort_keys=True)
+    ck = _h({"u": PRO_SAJU_URL, **payload})
     cached = _cache_get(ck)
     if cached: return cached
 
     headers = {"Authorization": f"Bearer {PRO_SAJU_KEY}", "Content-Type": "application/json"}
     timeout = httpx.Timeout(3.0, connect=3.0)
     last_err = None
-    for _ in (1,2):
+    for _ in (1, 2):
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 r = await client.post(f"{PRO_SAJU_URL}/analyze", headers=headers, json=payload)
@@ -94,17 +99,15 @@ def adapt_vendor_to_unified(v: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str
     yhs = v.get("yongheeshin", [])
     daewoon = v.get("daewoon", [])
     sewoon = v.get("sewoon", [])
-    summary = v.get("summary") or f"{meta['name']}님의 핵심 성향 및 운세 흐름 요약"
+    summary = v.get("summary") or f"{meta['name']}님의 핵심 성향과 흐름이 안정적으로 나타납니다."
 
     return {
         "ok": True,
         "meta": meta,
         "saju": {
             "pillars": {
-                "year": pillars.get("y"),
-                "month": pillars.get("m"),
-                "day": pillars.get("d"),
-                "time": pillars.get("t"),
+                "year": pillars.get("y"), "month": pillars.get("m"),
+                "day": pillars.get("d"),  "time": pillars.get("t"),
             },
             "ten_gods": ten_gods,
             "yongheeshin": yhs,
@@ -114,52 +117,57 @@ def adapt_vendor_to_unified(v: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str
     }
 '@
 Set-Content -Path $AdapterPath -Value $AdapterCode -Encoding UTF8
-Write-Host "[OK] saju_pro_adapter.py 갱신"
+Write-Host '[OK] saju_pro_adapter.py written'
 
-# 2) main.py 백업 및 패치
+# ---- 2) main.py 백업 후 패치 ----
 $MainPath = Join-Path $RepoPath "main.py"
-if (!(Test-Path $MainPath)) { throw "main.py 없음: $MainPath" }
+if (!(Test-Path $MainPath)) { throw "main.py not found: $MainPath" }
 
-$Backup = "$MainPath.bak_$(Get-Date -Format yyyyMMdd_HHmmss)"
-Copy-Item $MainPath $Backup
-Write-Host "[OK] 백업 -> $Backup"
+$BackupPath = "$MainPath.bak_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+Copy-Item $MainPath $BackupPath
+Write-Host "[OK] backup -> $BackupPath"
 
-$T = Get-Content $MainPath -Raw
+$MainText = Get-Content $MainPath -Raw
 
-# import 주입
-if ($T -notmatch 'from\s+saju_pro_adapter\s+import\s+fetch_saju_from_provider') {
-  $T = $T -replace '(\r?\nfrom fastapi[^\r\n]+)', "`$1`r`nfrom saju_pro_adapter import fetch_saju_from_provider"
+# 2-1 import 추가
+if ($MainText -notmatch 'from\s+saju_pro_adapter\s+import\s+fetch_saju_from_provider') {
+  $MainText = $MainText -replace '(from\s+fastapi[^\r\n]+)', "`$1`r`nfrom saju_pro_adapter import fetch_saju_from_provider"
 }
 
-# meta 블록 뒤에 saju 호출 주입 (중복 방지)
-if ($T -notmatch 'PRO SAJU INTEGRATION') {
-  $inject = @'
-        # === PRO SAJU INTEGRATION ===
+# 2-2 analyze 내부에 주입: meta 딕셔너리 직후
+$Inject = @'
+        # === PRO SAJU INTEGRATION (auto) ===
         saju_part = None
         try:
             saju_part = await fetch_saju_from_provider(meta)
         except Exception:
-            saju_part = None
+            saju_part = None  # fallback to demo
 '@
-  $T = $T -replace "(\r?\n\s*meta\s*=\s*\{[^\}]+\}\s*\r?\n)", "`$1$inject`r`n"
+
+if ($MainText -notmatch 'PRO SAJU INTEGRATION \(auto\)') {
+  $MainText = [regex]::Replace(
+    $MainText,
+    "(\n\s*meta\s*=\s*\{[^\}]*\}\s*\n)",
+    "`$1$Inject",
+    [System.Text.RegularExpressions.RegexOptions]::Singleline
+  )
 }
 
-# 응답 조립부의 요약들에 saju_part 우선 적용
-$T = $T -replace '("saju_summary"\s*:\s*)[^,]+,', '$1(saju_part["saju_summary"] if saju_part else "데모 계산값 (전문 사주 API 권장)"),'
-$T = $T -replace '("combined_summary"\s*:\s*)[^,]+,', '$1(saju_part["saju_summary"] if saju_part else "데모 종합 요약"),'
+# 2-3 응답 합치기(요약 필드 우선권 부여)
+$MainText = $MainText -replace '("saju_summary"\s*:\s*)[^,]+,', '$1(saju_part["saju_summary"] if saju_part else "데모 계산값 (상업용은 전문 사주 API)"),'
+$MainText = $MainText -replace '("combined_summary"\s*:\s*)[^,]+,', '$1(saju_part["saju_summary"] if saju_part else "데모 종합 요약"),'
 
-Set-Content -Path $MainPath -Value $T -Encoding UTF8
-Write-Host "[OK] main.py 패치 완료"
+Set-Content -Path $MainPath -Value $MainText -Encoding UTF8
+Write-Host '[OK] main.py patched'
 
-# 3) 커밋/푸시
+# ---- 3) 커밋/푸시 ----
 git add -A
-git commit -m "feat(pro-saju): add provider adapter + integrate (auto)" | Out-Null
+git commit -m "feat(pro-saju): adapter + analyze integration (auto)" | Out-Null
 git push origin $Branch
 
-Write-Host ""
-Write-Host "==============================================="
-Write-Host " 완료! GitHub 푸시까지 끝. (Render 연결이면 자동 재배포)"
-Write-Host " Render 환경변수 추가 후 Manual Deploy:"
-Write-Host "   PRO_SAJU_URL = https://벤더도메인/v1/saju"
-Write-Host "   PRO_SAJU_KEY = <벤더키>"
-Write-Host "==============================================="
+Write-Host '==============================================='
+Write-Host ' 완료: GitHub 푸시 완료. Render와 연결되어 있으면 자동 재배포됩니다.'
+Write-Host ' Render 환경변수에 다음을 추가하세요:'
+Write-Host '   PRO_SAJU_URL  (예: https://api.vendor.com/v1/saju)'
+Write-Host '   PRO_SAJU_KEY  (벤더 발급 키)'
+Write-Host '==============================================='
