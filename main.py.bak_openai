@@ -1,0 +1,146 @@
+﻿from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import JSONResponse
+from saju_pro_adapter import fetch_saju_from_provider
+from fastapi.middleware.cors import CORSMiddleware
+from saju_pro_adapter import fetch_saju_from_provider
+import os
+# --- add these near the top of main.py ---
+import os
+from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, Form
+from saju_pro_adapter import fetch_saju_from_provider
+
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "790936bcb6fbff65361948fb345b222b940336c4f61033daee54cada2e6577fe")
+
+async def require_token(request: Request):
+    token = None
+
+    # 1) Authorization 헤더
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        token = auth.split(None, 1)[1].strip()
+
+    # 2) 쿼리스트링 (?token=... 또는 ?service_token=...)
+    if not token:
+        qp = request.query_params
+        token = qp.get("token") or qp.get("service_token")
+
+    # 3) multipart/form-data 폼 필드 (token / service_token)
+    if not token:
+        try:
+            form = await request.form()
+            token = form.get("token") or form.get("service_token")
+        except Exception:
+            pass
+
+    if not token or (SERVICE_TOKEN and token != SERVICE_TOKEN):
+        # SERVICE_TOKEN이 .env/Render에 비어있지 않다면 일치해야 함
+        raise HTTPException(status_code=401, detail="인증 실패: SERVICE_TOKEN이 일치하지 않음")
+    return True
+
+app = FastAPI(title="Fortune AI Server", version="1.2.0")
+app = FastAPI()
+
+@app.get("/health")
+async def health():
+    return {"ok": True, "version": "1.2.0"}
+
+# 기존 analyze 함수 정의를 이런 식으로 바꿉니다:
+@app.post("/analyze")
+async def analyze(
+    ok: bool = Depends(require_token),                # ← 이 줄 추가
+    name: str = Form(...),
+    gender: str = Form(...),
+    calendarType: str = Form(...),
+    birthdate: str = Form(...),
+    birthtime: str = Form(...),
+    file: UploadFile = File(...)
+):
+    # ... 기존 분석 로직 그대로 ...
+    return {"ok": True, "name": name}
+
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "790936bcb6fbff65361948fb345b222b940336c4f61033daee54cada2e6577fe")
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "https://dnsauddmfqhsms.mycafe24.com")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if ALLOW_ORIGINS=="*" else [o.strip() for o in ALLOW_ORIGINS.split(",")],
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+)
+
+@app.get("/health")
+def health():
+    return {"ok": True, "version": app.version}
+
+def check_token(h):
+    if not SERVICE_TOKEN: return
+    if not h or not h.lower().startswith("bearer "):
+        raise HTTPException(status_code=403, detail="인증 실패: Authorization 누락")
+    if h.split(" ",1)[1].strip() != SERVICE_TOKEN:
+        raise HTTPException(status_code=403, detail="인증 실패: SERVICE_TOKEN 불일치")
+
+@app.post("/analyze")
+async def analyze(
+    authorization: str|None = None,
+    name: str = Form(...),
+    gender: str = Form(...),
+    calendarType: str = Form(...),
+    birthdate: str = Form(...),
+    birthtime: str = Form(...),
+    file: UploadFile = File(...)
+):
+    check_token(authorization)
+    content = await file.read()
+    # >>> PRO SAJU START (method A - auto inject)
+try:
+    # meta ?덉쟾 ?뺣낫
+    if 'meta' not in locals():
+        _form = await request.form()
+        meta = {
+            "name": _form.get("name") or "",
+            "gender": _form.get("gender") or "unknown",
+            "calendarType": _form.get("calendarType") or "solar",
+            "birthdate": _form.get("birthdate") or "",
+            "birthtime": _form.get("birthtime") or "unknown",
+        }
+        # === PRO SAJU INTEGRATION (auto) ===
+        saju_part = None
+        try:
+            saju_part = await fetch_saju_from_provider(meta)
+        except Exception:
+            saju_part = None  # fallback to demo    if fetch_pro_saju:
+        _norm = fetch_pro_saju(meta)
+        if isinstance(_norm, dict):
+            gwansang_summary = locals().get('gwansang_summary', '')
+            saju_summary     = locals().get('saju_summary', '')
+            combined_summary = locals().get('combined_summary', '')
+            lucky            = locals().get('lucky', {"colors":[],"numbers":[],"direction":""})
+
+            if _norm.get('gwansang_summary'): gwansang_summary = _norm['gwansang_summary']
+            if _norm.get('saju_summary'):     saju_summary     = _norm['saju_summary']
+            if _norm.get('combined_summary'): combined_summary = _norm['combined_summary']
+            if isinstance(_norm.get('lucky'), dict): lucky.update(_norm['lucky'])
+
+            result = {
+                "ok": True,
+                "meta": meta,
+                "gwansang_summary": gwansang_summary,
+                "saju_summary": (saju_part["saju_summary"] if saju_part else "?곕え 怨꾩궛媛?(?곸뾽?⑹? ?꾨Ц ?ъ＜ API)"),
+                "combined_summary": (saju_part["saju_summary"] if saju_part else "?곕え 醫낇빀 ?붿빟"),
+                "bbox": locals().get("bbox", None),
+                "lucky": lucky,
+            }
+            return JSONResponse(result) if 'JSONResponse' in globals() else result
+except Exception as _e:
+    print(f"[WARN] PRO block error: {_e}")
+# <<< PRO SAJU END
+return JSONResponse({
+        "ok": True,
+        "meta": {"name": name,"gender": gender,"calendarType": calendarType,
+                 "birthdate": birthdate,"birthtime": birthtime,"upload_kb": round(len(content)/1024,1)},
+        "gwansang_summary": "서버 작동 확인용 더미 요약",
+        "saju_summary": (saju_part["saju_summary"] if saju_part else "?곕え 怨꾩궛媛?(?곸뾽?⑹? ?꾨Ц ?ъ＜ API)"),
+        "combined_summary": (saju_part["saju_summary"] if saju_part else "?곕え 醫낇빀 ?붿빟"),
+        "lucky": {"colors":["네이비","블랙","그레이"],"numbers":[3,6,9],"direction":"북"}
+    })
+
+
+
