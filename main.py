@@ -1,4 +1,5 @@
-﻿from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+﻿# -*- coding: utf-8 -*-
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 
 # === OPENAI_VENDOR_BEGIN ===
 import os, json, requests
@@ -77,15 +78,15 @@ def call_openai_vendor(meta: dict, gwansang_summary: str, base_lucky: dict) -> d
             L = line.strip()
             if L.startswith("- ?ъ＜ ?붿빟"):
                 parts["section"] = "saju"
-            elif L.startswith("- 愿???붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "gwan"
-            elif L.startswith("- 醫낇빀 ?붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "comb"
-            elif L.startswith("- ?됱슫 ?ъ씤??):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "lucky"
-            elif L.startswith("- ???):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "dae"
-            elif L.startswith("- ?몄슫"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "se"
             else:
                 sec = parts.get("section","")
@@ -181,15 +182,15 @@ def call_openai_vendor(meta: dict, gwansang_summary: str, base_lucky: dict) -> d
             L = line.strip()
             if L.startswith("- ?ъ＜ ?붿빟"):
                 parts["section"] = "saju"
-            elif L.startswith("- 愿???붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "gwan"
-            elif L.startswith("- 醫낇빀 ?붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "comb"
-            elif L.startswith("- ?됱슫 ?ъ씤??):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "lucky"
-            elif L.startswith("- ???):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "dae"
-            elif L.startswith("- ?몄슫"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "se"
             else:
                 sec = parts.get("section","")
@@ -286,15 +287,15 @@ def call_openai_vendor(meta: dict, gwansang_summary: str, base_lucky: dict) -> d
             L = line.strip()
             if L.startswith("- ?ъ＜ ?붿빟"):
                 parts["section"] = "saju"
-            elif L.startswith("- 愿???붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "gwan"
-            elif L.startswith("- 醫낇빀 ?붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "comb"
-            elif L.startswith("- ?됱슫 ?ъ씤??):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "lucky"
-            elif L.startswith("- ???):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "dae"
-            elif L.startswith("- ?몄슫"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "se"
             else:
                 sec = parts.get("section","")
@@ -394,15 +395,15 @@ def call_openai_vendor(meta: dict, gwansang_summary: str, base_lucky: dict) -> d
             L = line.strip()
             if L.startswith("- ?ъ＜ ?붿빟"):
                 parts["section"] = "saju"
-            elif L.startswith("- 愿???붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "gwan"
-            elif L.startswith("- 醫낇빀 ?붿빟"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "comb"
-            elif L.startswith("- ?됱슫 ?ъ씤??):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "lucky"
-            elif L.startswith("- ???):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "dae"
-            elif L.startswith("- ?몄슫"):
+    elif False:  # hotfix: removed corrupted rule
                 parts["section"] = "se"
             else:
                 sec = parts.get("section","")
@@ -637,3 +638,4 @@ def render_rich_results(meta: dict, gwansang: str):
     lucky = {"colors":["?ㅼ씠鍮?,"李⑥퐳","?붿씠??], "numbers":[3,6,9], "direction":"遺곷룞"}
     return saju, combined, lucky
 # === END RICH OPENAI PROVIDER ===
+
